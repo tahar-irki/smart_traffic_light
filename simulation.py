@@ -7,7 +7,7 @@ WIDTH= 1200
 
 FPS= 60
 
-LANE_WIDTH= 55
+LANE_WIDTH= 100
 ROAD_WIDTH= LANE_WIDTH * 2
 
 CENTER_X= WIDTH // 2
@@ -30,7 +30,7 @@ CAR_WIDTH= 20
 CAR_SPEED= 120.0
 CAR_ACCELERATION= 180.0
 CAR_DECELERATION= 250.0
-MIN_CAR_GAP= 12
+MIN_CAR_GAP= 40
 CAR_COLORS = [
     (50, 120, 220),
     (220, 80, 70),
@@ -40,10 +40,10 @@ CAR_COLORS = [
     (220, 120, 50),
 ]
 
-SPAWN_INTERVAL= 0.65
+SPAWN_INTERVAL= 0.5
 
-NS_LEFT_TIME = 4.0
-NS_THROUGH_TIME = 4.0
+NS_LEFT_TIME = 8.8
+NS_THROUGH_TIME = 8.0
 EW_LEFT_TIME = 4.0
 EW_THROUGH_TIME = 4.0
 YELLOW_TIME = 3.0
@@ -54,6 +54,7 @@ SOUTH= "south"
 EAST= "east"
 WEST= "west"
 
+RIGHT = "right"
 LEFT = "left"
 THROUGH = "through"
 
@@ -87,7 +88,9 @@ class traffic_controller:
                 NS_THROUGH_TIME,
                 [
                 (NORTH,THROUGH),
-                (SOUTH,THROUGH)
+                (SOUTH,THROUGH),
+                (NORTH,RIGHT),
+                (SOUTH,RIGHT),
                 ]
             ),
             Phase(
@@ -103,7 +106,9 @@ class traffic_controller:
                 EW_THROUGH_TIME,
                 [
                     (WEST,THROUGH),
-                    (EAST,THROUGH)
+                    (EAST,THROUGH),
+                    (WEST,RIGHT),
+                    (EAST,RIGHT),
                 ]
             ),
             Phase(
@@ -137,7 +142,15 @@ class traffic_controller:
         if self.phase_timer >= self.current_phase.duration:
             self.yellow= True
             self.yellow_timer= 0.0
-            
+
+    def get_light_state(self, approach, movement):
+        current_phase = self.Phases[self.current_phase_index]
+
+        if (approach, movement) in current_phase.allowed_movements:
+            if self.yellow:
+                return "YELLOW"
+            return "GREEN"
+        return "RED"        
     def is_movement_allowed(self,approach,movement):
         if self.yellow:
             return False
@@ -208,8 +221,18 @@ class traffic_light:
             (int(x), int(y)),
             10,
         )
+def get_bezier_point(p0, p1, p2, t):
+    """Calculates (x, y) along a quadratic Bezier curve for t in [0.0, 1.0]."""
+    u = 1 - t
+    x = u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0]
+    y = u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1]
+    return x, y
 class Car:
     def __init__(self,approach,movement):
+        self.turn_progress = 0.0
+        self.p0 = None
+        self.p1 = None
+        self.p2 = None
         self.approach=approach
         self.movement=movement
         self.speed = CAR_SPEED
@@ -234,40 +257,28 @@ class Car:
         self.initialize_position()
 
     def initialize_position(self):
-    
-            offset = LANE_WIDTH * 0.5
-    
-            if self.approach == NORTH:
-    
-                self.x = CENTER_X - offset
-                self.y = -CAR_LENGTH
-    
-                self.direction_x = 0
-                self.direction_y = 1
-    
-            elif self.approach == SOUTH:
-    
-                self.x = CENTER_X + offset
-                self.y = HEIGHT + CAR_LENGTH
-    
-                self.direction_x = 0
-                self.direction_y = -1
-    
-            elif self.approach == EAST:
-    
-                self.x = WIDTH + CAR_LENGTH
-                self.y = CENTER_Y + offset
-    
-                self.direction_x = -1
-                self.direction_y = 0
-    
-            elif self.approach == WEST:
-    
-                self.x = -CAR_LENGTH
-                self.y = CENTER_Y - offset
-    
-                self.direction_x = 1
-                self.direction_y = 0
+        # Dedicated offsets: RIGHT turns use right side, LEFT/THROUGH use left/center side
+        offset = LANE_WIDTH * 0.5  # 50px
+
+        if self.approach == NORTH:
+            self.x = CENTER_X - offset if self.movement != RIGHT else CENTER_X - (ROAD_WIDTH // 2) + 25
+            self.y = -CAR_LENGTH
+            self.direction_x, self.direction_y = 0, 1
+
+        elif self.approach == SOUTH:
+            self.x = CENTER_X + offset if self.movement != RIGHT else CENTER_X + (ROAD_WIDTH // 2) - 25
+            self.y = HEIGHT + CAR_LENGTH
+            self.direction_x, self.direction_y = 0, -1
+
+        elif self.approach == EAST:
+            self.x = WIDTH + CAR_LENGTH
+            self.y = CENTER_Y - offset if self.movement != RIGHT else CENTER_Y - (ROAD_WIDTH // 2) + 25
+            self.direction_x, self.direction_y = -1, 0
+
+        elif self.approach == WEST:
+            self.x = -CAR_LENGTH
+            self.y = CENTER_Y + offset if self.movement != RIGHT else CENTER_Y + (ROAD_WIDTH // 2) - 25
+            self.direction_x, self.direction_y = 1, 0
     def stop_line_position(self):
     
         if self.approach == NORTH:
@@ -295,122 +306,107 @@ class Car:
         if self.approach == WEST:
             return self.stop_line_position() - self.x
     def inside_intersection(self):
-    
-            return (
-                CENTER_X - INTERSECTION_HALF <= self.x <=
-                CENTER_X + INTERSECTION_HALF
-                and
-                CENTER_Y - INTERSECTION_HALF <= self.y <=
-                CENTER_Y + INTERSECTION_HALF
-            )
+        
+        return (
+            CENTER_X - INTERSECTION_HALF <= self.x <=
+            CENTER_X + INTERSECTION_HALF
+            and
+            CENTER_Y - INTERSECTION_HALF <= self.y <=
+            CENTER_Y + INTERSECTION_HALF
+        )
+    def has_passed_stop_line(self):
+        # Checks if the car's front edge has crossed the stop line for its direction
+        stop_pos = self.stop_line_position()
+        if self.approach == NORTH:
+            return self.y >= stop_pos
+        elif self.approach == SOUTH:
+            return self.y <= stop_pos
+        elif self.approach == EAST:
+            return self.x <= stop_pos
+        elif self.approach == WEST:
+            return self.x >= stop_pos
+        return False
+
     def should_stop(self, controller, cars):
-    
-            # Once inside the intersection, do not stop.
-            if self.inside_intersection():
-                return False
-    
-            allowed = controller.is_movement_allowed(
-                self.approach,
-                self.movement
-            )
-    
-            if not allowed:
-    
-                if self.distance_to_stop_line() <= 80:
-                    return True
-    
-            # Check car in front.
-            for other in cars:
-    
-                if other is self:
-                    continue
-    
-                if other.approach != self.approach:
-                    continue
-    
-                if other.movement != self.movement:
-                    continue
-    
-                # Same lane and ahead
-                if self.approach == NORTH:
-    
-                    if other.y > self.y:
-                        gap = other.y - self.y
-    
-                        if gap < CAR_LENGTH + MIN_CAR_GAP:
-                            return True
-    
-                elif self.approach == SOUTH:
-    
-                    if other.y < self.y:
-                        gap = self.y - other.y
-    
-                        if gap < CAR_LENGTH + MIN_CAR_GAP:
-                            return True
-    
-                elif self.approach == EAST:
-    
-                    if other.x < self.x:
-                        gap = self.x - other.x
-    
-                        if gap < CAR_LENGTH + MIN_CAR_GAP:
-                            return True
-    
-                elif self.approach == WEST:
-    
-                    if other.x > self.x:
-                        gap = other.x - self.x
-    
-                        if gap < CAR_LENGTH + MIN_CAR_GAP:
-                            return True
-    
-            return False
-    def update(self, dt, controller, cars):
-    
-            self.total_time += dt
-    
-            stopping = self.should_stop(controller, cars)
-    
-            if stopping:
-    
-                self.target_speed = 0
-    
-                self.state = WAITING
-                self.waiting_time += dt
-    
+        # 1. Never stop if actively executing a curve or past the stop line
+        if self.state == TURNING or self.has_entered_intersection or self.has_passed_stop_line():
+            return self.check_car_in_front(cars)
+
+        # 2. Query traffic light state
+        light_state = controller.get_light_state(self.approach, self.movement)
+        dist = self.distance_to_stop_line()
+
+        if light_state == "RED":
+            # Always brake if approaching a red light
+            if dist <= 120:
+                return True
+
+        elif light_state == "YELLOW":
+            # Calculate minimum required stopping distance: d = v^2 / (2 * a)
+            safe_stopping_distance = (self.speed ** 2) / (2 * CAR_DECELERATION) + 20
+
+            # DILEMMA ZONE DECISION:
+            # If closer than safe stopping distance, commitment is made -> proceed through!
+            # If farther than safe stopping distance -> apply smooth brakes.
+            if dist <= safe_stopping_distance:
+                return self.check_car_in_front(cars)  # Proceed safely
             else:
-    
-                self.target_speed = CAR_SPEED
-    
-                if self.inside_intersection():
-                    self.state = CROSSING
-                else:
-                    self.state = APPROACHING
-    
-            # Acceleration/deceleration
-    
-            if self.speed < self.target_speed:
-    
-                self.speed += CAR_ACCELERATION * dt
-                self.speed = min(self.speed, self.target_speed)
-    
-            elif self.speed > self.target_speed:
-    
-                self.speed -= CAR_DECELERATION * dt
-                self.speed = max(self.speed, self.target_speed)
-    
-            # Move car
-    
+                return True  # Apply brakes smoothly
+
+        # 3. Check for queuing behind other cars
+        return self.check_car_in_front(cars)
+
+    def check_car_in_front(self, cars):
+        for other in cars:
+            if other is self:
+                continue
+            if other.approach != self.approach or other.movement != self.movement:
+                continue
+
+            # Ignore cars that have already committed to turning
+            if other.state == TURNING:
+                continue
+
+            # Linear distance check for cars in the same approach lane
+            if self.approach == NORTH and other.y > self.y:
+                if (other.y - self.y) < CAR_LENGTH + MIN_CAR_GAP:
+                    return True
+            elif self.approach == SOUTH and other.y < self.y:
+                if (self.y - other.y) < CAR_LENGTH + MIN_CAR_GAP:
+                    return True
+            elif self.approach == EAST and other.x < self.x:
+                if (self.x - other.x) < CAR_LENGTH + MIN_CAR_GAP:
+                    return True
+            elif self.approach == WEST and other.x > self.x:
+                if (other.x - self.x) < CAR_LENGTH + MIN_CAR_GAP:
+                    return True
+
+        return False
+    def update(self, dt, controller, cars):
+        self.total_time += dt
+
+        # Determine target state
+        stopping = self.should_stop(controller, cars)
+
+        if stopping:
+            # Smooth deceleration down to 0
+            self.speed = max(0.0, self.speed - CAR_DECELERATION * dt)
+        else:
+            # Smooth acceleration up to max speed
+            self.speed = min(CAR_SPEED, self.speed + CAR_ACCELERATION * dt)
+
+        # Handle turns vs linear movement
+        if self.movement == LEFT:
+            self.handle_left_turn(dt)
+        elif self.movement == RIGHT:
+            self.handle_right_turn(dt)
+
+        # Move position based on updated continuous speed
+        if self.state != TURNING:
             self.x += self.direction_x * self.speed * dt
             self.y += self.direction_y * self.speed * dt
-    
-            # Handle turning
-    
-            if self.movement == LEFT:
-    
-                self.handle_left_turn()
-    
-            self.check_if_finished()
+
+        self.check_if_finished()
     def check_if_finished(self):
     
             margin = 100
@@ -423,51 +419,118 @@ class Car:
             ):
                 self.finished = True
                 self.state = LEAVING
-    def handle_left_turn(self):
-    
-            if self.has_entered_intersection:
-                return
-    
-            if self.inside_intersection():
-    
+    def handle_right_turn(self, dt):
+        # Trigger right turn immediately upon passing the stop line!
+        if not self.has_entered_intersection and self.has_passed_stop_line():
+            self.has_entered_intersection = True
+            self.state = TURNING
+            self.setup_right_turn_points()
+
+        if self.state == TURNING:
+            self.turn_progress += (self.speed * dt) / 80.0
+
+            if self.turn_progress >= 1.0:
+                self.turn_progress = 1.0
+                self.state = LEAVING
+                self.x, self.y = self.p2
+                self.update_right_exit_direction()
+            else:
+                self.x, self.y = get_bezier_point(
+                    self.p0, self.p1, self.p2, self.turn_progress
+                )
+
+    def setup_right_turn_points(self):
+        # Lane offset for the rightmost lane center (e.g., 75px from road center)
+        r_offset = (ROAD_WIDTH // 2) - 25
+
+        if self.approach == NORTH:
+            # North -> West (Exiting Westbound: Westbound lanes are UPPER side, so Y = CENTER_Y - r_offset)
+            self.p0 = (CENTER_X - r_offset, CENTER_Y - INTERSECTION_HALF)
+            self.p1 = (CENTER_X - INTERSECTION_HALF, CENTER_Y - INTERSECTION_HALF)
+            self.p2 = (CENTER_X - INTERSECTION_HALF, CENTER_Y - r_offset)
+
+        elif self.approach == SOUTH:
+            # South -> East (Exiting Eastbound: Eastbound lanes are LOWER side, so Y = CENTER_Y + r_offset)
+            self.p0 = (CENTER_X + r_offset, CENTER_Y + INTERSECTION_HALF)
+            self.p1 = (CENTER_X + INTERSECTION_HALF, CENTER_Y + INTERSECTION_HALF)
+            self.p2 = (CENTER_X + INTERSECTION_HALF, CENTER_Y + r_offset)
+
+        elif self.approach == EAST:
+            # East -> North (Exiting Northbound: Northbound lanes are RIGHT side, so X = CENTER_X + r_offset)
+            self.p0 = (CENTER_X + INTERSECTION_HALF, CENTER_Y - r_offset)
+            self.p1 = (CENTER_X + INTERSECTION_HALF, CENTER_Y - INTERSECTION_HALF)
+            self.p2 = (CENTER_X + r_offset, CENTER_Y - INTERSECTION_HALF)
+
+        elif self.approach == WEST:
+            # West -> South (Exiting Southbound: Southbound lanes are LEFT side, so X = CENTER_X - r_offset)
+            self.p0 = (CENTER_X - INTERSECTION_HALF, CENTER_Y + r_offset)
+            self.p1 = (CENTER_X - INTERSECTION_HALF, CENTER_Y + INTERSECTION_HALF)
+            self.p2 = (CENTER_X - r_offset, CENTER_Y + INTERSECTION_HALF)
+    def update_right_exit_direction(self):
+        if self.approach == NORTH:   # Turning West
+            self.direction_x, self.direction_y = -1, 0
+        elif self.approach == SOUTH: # Turning East
+            self.direction_x, self.direction_y = 1, 0
+        elif self.approach == EAST:  # Turning North
+            self.direction_x, self.direction_y = 0, -1
+        elif self.approach == WEST:  # Turning South
+            self.direction_x, self.direction_y = 0, 1
+    def handle_left_turn(self, dt):
+            if not self.has_entered_intersection and self.inside_intersection():
                 self.has_entered_intersection = True
                 self.state = TURNING
-    
-                if self.approach == NORTH:
-    
-                    # North -> West
-                    self.direction_x = -1
-                    self.direction_y = 0
-    
-                    self.x = CENTER_X
-                    self.y = CENTER_Y
-    
-                elif self.approach == SOUTH:
-    
-                    # South -> East
-                    self.direction_x = 1
-                    self.direction_y = 0
-    
-                    self.x = CENTER_X
-                    self.y = CENTER_Y
-    
-                elif self.approach == EAST:
-    
-                    # East -> North
-                    self.direction_x = 0
-                    self.direction_y = -1
-    
-                    self.x = CENTER_X
-                    self.y = CENTER_Y
-    
-                elif self.approach == WEST:
-    
-                    # West -> South
-                    self.direction_x = 0
-                    self.direction_y = 1
-    
-                    self.x = CENTER_X
-                    self.y = CENTER_Y
+                self.setup_bezier_points()
+
+            if self.state == TURNING:
+                # Advance interpolation based on car speed
+                # (Turn path length is approximately 150px)
+                self.turn_progress += (self.speed * dt) / 150.0
+
+                if self.turn_progress >= 1.0:
+                    # Turn finished - snap to exit line direction
+                    self.turn_progress = 1.0
+                    self.state = LEAVING
+                    self.x, self.y = self.p2
+                    self.update_exit_direction()
+                else:
+                    # Interpolate smooth position along curve
+                    self.x, self.y = get_bezier_point(self.p0, self.p1, self.p2, self.turn_progress)
+
+    def setup_bezier_points(self):
+        offset = LANE_WIDTH * 0.5  # 50px offset to center in-lane
+
+        if self.approach == NORTH:
+            # North -> East (Turning towards positive X)
+            self.p0 = (CENTER_X - offset, CENTER_Y - INTERSECTION_HALF)
+            self.p1 = (CENTER_X - offset, CENTER_Y + offset)
+            self.p2 = (CENTER_X + INTERSECTION_HALF, CENTER_Y + offset)
+
+        elif self.approach == SOUTH:
+            # South -> West (Turning towards negative X)
+            self.p0 = (CENTER_X + offset, CENTER_Y + INTERSECTION_HALF)
+            self.p1 = (CENTER_X + offset, CENTER_Y - offset)
+            self.p2 = (CENTER_X - INTERSECTION_HALF, CENTER_Y - offset)
+
+        elif self.approach == EAST:
+            # East -> South (Turning towards positive Y)
+            self.p0 = (CENTER_X + INTERSECTION_HALF, CENTER_Y - offset)
+            self.p1 = (CENTER_X - offset, CENTER_Y - offset)
+            self.p2 = (CENTER_X - offset, CENTER_Y + INTERSECTION_HALF)
+
+        elif self.approach == WEST:
+            # West -> North (Turning towards negative Y)
+            self.p0 = (CENTER_X - INTERSECTION_HALF, CENTER_Y + offset)
+            self.p1 = (CENTER_X + offset, CENTER_Y + offset)
+            self.p2 = (CENTER_X + offset, CENTER_Y - INTERSECTION_HALF)
+    def update_exit_direction(self):
+        if self.approach == NORTH:   # North -> East
+            self.direction_x, self.direction_y = 1, 0
+        elif self.approach == SOUTH: # South -> West
+            self.direction_x, self.direction_y = -1, 0
+        elif self.approach == EAST:  # East -> South
+            self.direction_x, self.direction_y = 0, 1
+        elif self.approach == WEST:  # West -> North
+            self.direction_x, self.direction_y = 0, -1
     def draw(self, screen):
     
             if self.direction_x != 0:
@@ -676,7 +739,7 @@ def create_traffic_lights(controller):
 
     lights.append(
         traffic_light(
-            CENTER_X - 100,
+            CENTER_X ,
             CENTER_Y - 130,
             NORTH,
             controller,
@@ -685,7 +748,7 @@ def create_traffic_lights(controller):
 
     lights.append(
         traffic_light(
-            CENTER_X + 100,
+            CENTER_X ,
             CENTER_Y + 130,
             SOUTH,
             controller,
@@ -695,7 +758,7 @@ def create_traffic_lights(controller):
     lights.append(
         traffic_light(
             CENTER_X + 130,
-            CENTER_Y - 100,
+            CENTER_Y ,
             EAST,
             controller,
         )
@@ -704,7 +767,7 @@ def create_traffic_lights(controller):
     lights.append(
         traffic_light(
             CENTER_X - 130,
-            CENTER_Y + 100,
+            CENTER_Y ,
             WEST,
             controller,
         )
@@ -723,6 +786,7 @@ def spawn_car(cars):
     movement = random.choice([
         LEFT,
         THROUGH,
+        RIGHT,
     ])
 
     new_car = Car(
