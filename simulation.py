@@ -8,7 +8,7 @@ WIDTH= 1200
 FPS= 60
 
 LANE_WIDTH= 100
-ROAD_WIDTH= LANE_WIDTH * 2
+ROAD_WIDTH= LANE_WIDTH * 3
 
 CENTER_X= WIDTH // 2
 CENTER_Y= HEIGHT // 2
@@ -25,12 +25,12 @@ BACKGROUND_COLOR= (169,169,169)
 LANE_LINE_COLOR= (192,192,192)
 STOP_LINE_COLOR= (255,0,127)
 
-CAR_LENGTH= 30
+CAR_LENGTH= 40
 CAR_WIDTH= 20
 CAR_SPEED= 120.0
 CAR_ACCELERATION= 180.0
 CAR_DECELERATION= 250.0
-MIN_CAR_GAP= 40
+MIN_CAR_GAP= 50
 CAR_COLORS = [
     (50, 120, 220),
     (220, 80, 70),
@@ -257,27 +257,39 @@ class Car:
         self.initialize_position()
 
     def initialize_position(self):
-        # Dedicated offsets: RIGHT turns use right side, LEFT/THROUGH use left/center side
-        offset = LANE_WIDTH * 0.5  # 50px
+
+        offset = LANE_WIDTH * 0.7  
 
         if self.approach == NORTH:
-            self.x = CENTER_X - offset if self.movement != RIGHT else CENTER_X - (ROAD_WIDTH // 2) + 25
+            if self.movement== LEFT:
+                self.x = CENTER_X - offset + 25 
+            else:
+                self.x = CENTER_X - offset - 50 + 25 if self.movement != RIGHT else CENTER_X - (ROAD_WIDTH // 2) + 5
             self.y = -CAR_LENGTH
             self.direction_x, self.direction_y = 0, 1
 
         elif self.approach == SOUTH:
-            self.x = CENTER_X + offset if self.movement != RIGHT else CENTER_X + (ROAD_WIDTH // 2) - 25
+            if self.movement == LEFT:
+                self.x = CENTER_X + offset - 25
+            else :
+                self.x = CENTER_X + offset - 25 + 50 if self.movement != RIGHT else CENTER_X + (ROAD_WIDTH // 2) - 5
             self.y = HEIGHT + CAR_LENGTH
             self.direction_x, self.direction_y = 0, -1
 
         elif self.approach == EAST:
             self.x = WIDTH + CAR_LENGTH
-            self.y = CENTER_Y - offset if self.movement != RIGHT else CENTER_Y - (ROAD_WIDTH // 2) + 25
+            if self.movement == LEFT:
+                self.y = CENTER_Y - offset + 25
+            else :    
+                self.y = CENTER_Y - offset + 25 - 50 if self.movement != RIGHT else CENTER_Y - (ROAD_WIDTH // 2) + 5
             self.direction_x, self.direction_y = -1, 0
 
         elif self.approach == WEST:
             self.x = -CAR_LENGTH
-            self.y = CENTER_Y + offset if self.movement != RIGHT else CENTER_Y + (ROAD_WIDTH // 2) - 25
+            if self.movement == LEFT:
+                self.y = CENTER_Y + offset - 25
+            else :    
+                self.y = CENTER_Y + offset - 25 + 50 if self.movement != RIGHT else CENTER_Y + (ROAD_WIDTH // 2) - 5
             self.direction_x, self.direction_y = 1, 0
     def stop_line_position(self):
     
@@ -314,8 +326,7 @@ class Car:
             CENTER_Y - INTERSECTION_HALF <= self.y <=
             CENTER_Y + INTERSECTION_HALF
         )
-    def has_passed_stop_line(self):
-        # Checks if the car's front edge has crossed the stop line for its direction
+    def has_passed_stop_line(self):      
         stop_pos = self.stop_line_position()
         if self.approach == NORTH:
             return self.y >= stop_pos
@@ -602,9 +613,9 @@ def draw_roads(screen):
 
     horizontal_rect = pygame.Rect(
         0,
-        CENTER_Y - ROAD_WIDTH // 2,
+        CENTER_Y - ROAD_WIDTH // 2 -20,
         WIDTH,
-        ROAD_WIDTH,
+        ROAD_WIDTH + 40 ,
     )
 
     pygame.draw.rect(
@@ -618,9 +629,9 @@ def draw_roads(screen):
     # --------------------------------------------------------
 
     vertical_rect = pygame.Rect(
-        CENTER_X - ROAD_WIDTH // 2,
+        CENTER_X - ROAD_WIDTH // 2 - 20,
         0,
-        ROAD_WIDTH,
+        ROAD_WIDTH + 40,
         HEIGHT,
     )
 
@@ -636,18 +647,46 @@ def draw_roads(screen):
 
     pygame.draw.line(
         screen,
-        LANE_LINE_COLOR,
+        BLACK,
         (0, CENTER_Y),
         (CENTER_X - INTERSECTION_HALF, CENTER_Y),
+        40,
+    )
+    pygame.draw.line(
+        screen,
+        LANE_LINE_COLOR,
+        (0, CENTER_Y + 70),
+        (CENTER_X - INTERSECTION_HALF - 35, CENTER_Y + 70),
+        2,
+    )
+    pygame.draw.line(
+        screen,
+        LANE_LINE_COLOR,
+        (0, CENTER_Y + 120),
+        (CENTER_X - INTERSECTION_HALF - 35, CENTER_Y + 120),
         2,
     )
 
     pygame.draw.line(
         screen,
         LANE_LINE_COLOR,
+        (CENTER_X + INTERSECTION_HALF + 35, CENTER_Y - 70),
+        (WIDTH, CENTER_Y - 70),
+        2,
+    )
+    pygame.draw.line(
+        screen,
+        LANE_LINE_COLOR,
+        (CENTER_X + INTERSECTION_HALF + 35, CENTER_Y - 120),
+        (WIDTH, CENTER_Y - 120),
+        2,
+    )
+    pygame.draw.line(
+        screen,
+        BLACK,
         (CENTER_X + INTERSECTION_HALF, CENTER_Y),
         (WIDTH, CENTER_Y),
-        2,
+        40,
     )
 
     # --------------------------------------------------------
@@ -656,17 +695,45 @@ def draw_roads(screen):
 
     pygame.draw.line(
         screen,
-        LANE_LINE_COLOR,
+        BLACK,
         (CENTER_X, 0),
         (CENTER_X, CENTER_Y - INTERSECTION_HALF),
+        40,
+    )
+    pygame.draw.line(
+        screen,
+        LANE_LINE_COLOR,
+        (CENTER_X - 70, 0),
+        (CENTER_X - 70, CENTER_Y - INTERSECTION_HALF - 35),
+        2,
+    )
+    pygame.draw.line(
+        screen,
+        LANE_LINE_COLOR,
+        (CENTER_X - 120, 0),
+        (CENTER_X - 120, CENTER_Y - INTERSECTION_HALF - 35),
         2,
     )
 
     pygame.draw.line(
         screen,
-        LANE_LINE_COLOR,
+        BLACK,
         (CENTER_X, CENTER_Y + INTERSECTION_HALF),
         (CENTER_X, HEIGHT),
+        40,
+    )
+    pygame.draw.line(
+        screen,
+        LANE_LINE_COLOR,
+        (CENTER_X + 70, CENTER_Y + INTERSECTION_HALF + 35),
+        (CENTER_X + 70, HEIGHT),
+        2,
+    )
+    pygame.draw.line(
+        screen,
+        LANE_LINE_COLOR,
+        (CENTER_X + 120, CENTER_Y + INTERSECTION_HALF + 35),
+        (CENTER_X + 120, HEIGHT),
         2,
     )
 
@@ -679,11 +746,11 @@ def draw_roads(screen):
         screen,
         STOP_LINE_COLOR,
         (
-            CENTER_X - ROAD_WIDTH // 2,
+            CENTER_X - ROAD_WIDTH // 2 - 20 ,
             CENTER_Y - INTERSECTION_HALF - STOP_DISTANCE,
         ),
         (
-            CENTER_X + ROAD_WIDTH // 2,
+            CENTER_X + ROAD_WIDTH // 2 + 20,
             CENTER_Y - INTERSECTION_HALF - STOP_DISTANCE,
         ),
         4,
@@ -694,11 +761,11 @@ def draw_roads(screen):
         screen,
         STOP_LINE_COLOR,
         (
-            CENTER_X - ROAD_WIDTH // 2,
+            CENTER_X - ROAD_WIDTH // 2 - 20,
             CENTER_Y + INTERSECTION_HALF + STOP_DISTANCE,
         ),
         (
-            CENTER_X + ROAD_WIDTH // 2,
+            CENTER_X + ROAD_WIDTH // 2 + 20,
             CENTER_Y + INTERSECTION_HALF + STOP_DISTANCE,
         ),
         4,
@@ -710,11 +777,11 @@ def draw_roads(screen):
         STOP_LINE_COLOR,
         (
             CENTER_X + INTERSECTION_HALF + STOP_DISTANCE,
-            CENTER_Y - ROAD_WIDTH // 2,
+            CENTER_Y - ROAD_WIDTH // 2 - 20,
         ),
         (
             CENTER_X + INTERSECTION_HALF + STOP_DISTANCE,
-            CENTER_Y + ROAD_WIDTH // 2,
+            CENTER_Y + ROAD_WIDTH // 2 + 20,
         ),
         4,
     )
@@ -725,11 +792,11 @@ def draw_roads(screen):
         STOP_LINE_COLOR,
         (
             CENTER_X - INTERSECTION_HALF - STOP_DISTANCE,
-            CENTER_Y - ROAD_WIDTH // 2,
+            CENTER_Y - ROAD_WIDTH // 2 - 20,
         ),
         (
             CENTER_X - INTERSECTION_HALF - STOP_DISTANCE,
-            CENTER_Y + ROAD_WIDTH // 2,
+            CENTER_Y + ROAD_WIDTH // 2 + 20,
         ),
         4,
     )
@@ -739,7 +806,7 @@ def create_traffic_lights(controller):
 
     lights.append(
         traffic_light(
-            CENTER_X ,
+            CENTER_X +1,
             CENTER_Y - 130,
             NORTH,
             controller,
@@ -748,7 +815,7 @@ def create_traffic_lights(controller):
 
     lights.append(
         traffic_light(
-            CENTER_X ,
+            CENTER_X + 1,
             CENTER_Y + 130,
             SOUTH,
             controller,
