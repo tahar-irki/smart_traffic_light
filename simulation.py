@@ -84,41 +84,46 @@ class traffic_controller:
     def __init__(self):
         self.Phases=[
             Phase(
-                "NS_THROUGH",
+                "NORTH_THROUGH",
                 NS_THROUGH_TIME,
                 [
                 (NORTH,THROUGH),
-                (SOUTH,THROUGH),
+                (NORTH,LEFT),
                 (NORTH,RIGHT),
+                (EAST,RIGHT),
+                ]
+            ),
+            Phase(
+                "WEST_THROUGH",
+                EW_LEFT_TIME,
+                [
+                (WEST,THROUGH),
+                (WEST,LEFT),
+                (WEST,RIGHT),
+                (NORTH,RIGHT),
+                ]
+            ),      
+            Phase(
+                "SOUTH_THROUGH",
+                NS_LEFT_TIME,
+                [
+                (SOUTH,THROUGH),
+                (SOUTH,LEFT),
+                (SOUTH,RIGHT),
+                (WEST,RIGHT),
+                ]
+            ),
+            Phase(
+                "EAST_THROUGH",
+                EW_THROUGH_TIME,
+                [
+                (EAST,THROUGH),
+                (EAST,LEFT),
+                (EAST,RIGHT),
                 (SOUTH,RIGHT),
                 ]
             ),
-            Phase(
-                "NS_LEFT",
-                NS_LEFT_TIME,
-                [
-                (NORTH,LEFT),
-                (SOUTH,LEFT)
-                ]
-            ),
-            Phase(
-                "EW_THROUGH",
-                EW_THROUGH_TIME,
-                [
-                    (WEST,THROUGH),
-                    (EAST,THROUGH),
-                    (WEST,RIGHT),
-                    (EAST,RIGHT),
-                ]
-            ),
-            Phase(
-                "EW_LEFT",
-                EW_LEFT_TIME,
-                [
-                    (WEST,LEFT),
-                    (EAST,LEFT)
-                ]
-            )       
+             
         ]
         self.current_phase_index=0
         self.phase_timer=0.0
@@ -197,10 +202,10 @@ def search_phase_eva(evaluation_list,phase):
             i+=1
     return -1
 def choose_action(traffic_info):
-    evaluation_NS_THROUGH=[traffic_info[0]*5 + traffic_info[3]*5 + traffic_info[2] + traffic_info[5],0]
-    evaluation_NS_LEFT=[traffic_info[1]*5 + traffic_info[4]*5 + traffic_info[2] + traffic_info[5],1]
-    evaluation_EW_THROUGH=[traffic_info[6]*5 + traffic_info[9]*5 + traffic_info[8] + traffic_info[11],2]
-    evaluation_EW_LEFT=[traffic_info[7]*5 + traffic_info[10]*5 + traffic_info[8] + traffic_info[11],3]
+    evaluation_NS_THROUGH=[ traffic_info[0]*3 + traffic_info[1]*3 + traffic_info[10] ,0]
+    evaluation_NS_LEFT=[traffic_info[4]*3 + traffic_info[3]*3 + traffic_info[1],2]
+    evaluation_EW_THROUGH=[traffic_info[7]*3 + traffic_info[6]*3 + traffic_info[4],1]
+    evaluation_EW_LEFT=[ traffic_info[10]*3 + traffic_info[9]*3 + traffic_info[7],3]
     evaluation_list=[evaluation_NS_THROUGH,evaluation_NS_LEFT,evaluation_EW_THROUGH,evaluation_EW_LEFT]
     evaluation_list.sort(key=lambda x: x[0], reverse=True)
     if traffic_info[12]==0 :
@@ -618,25 +623,25 @@ def get_traffic_state(cars,controller):
     total_north,north_through_right_waiting,north_left_waiting,total_south,south_through_right_waiting,south_left_waiting,total_west,west_through_right_waiting,west_left_waiting,total_east,east_through_right_waiting,east_left_waiting=0,0,0,0,0,0,0,0,0,0,0,0
     for car in cars:
         if car.approach == NORTH:
-            if car.movement== LEFT and car.state==WAITING:
+            if car.movement== RIGHT and car.state==WAITING:
                 north_left_waiting+=1
             elif car.state== WAITING:
                 north_through_right_waiting+=1
             total_north+=1
         elif car.approach==SOUTH:
-            if car.movement== LEFT and car.state==WAITING:
+            if car.movement== RIGHT and car.state==WAITING:
                 south_left_waiting += 1
             elif car.state==WAITING:
                 south_through_right_waiting += 1
             total_south += 1
         elif car.approach==WEST:
-            if car.movement== LEFT and car.state==WAITING:
+            if car.movement== RIGHT and car.state==WAITING:
                 west_left_waiting += 1
             elif car.state==WAITING:
                 west_through_right_waiting += 1
             total_west += 1
         elif car.approach==EAST:
-            if car.movement== LEFT and car.state==WAITING:
+            if car.movement== RIGHT and car.state==WAITING:
                 east_left_waiting += 1
             elif car.state==WAITING:
                 east_through_right_waiting += 1
@@ -1069,7 +1074,7 @@ def main():
             if print_time>=10.0:
                 print_time=0.0
                 if dtt>=15.0:
-                    print(f"{state_list}--{phase_duration}--{timetime}--{phase_NAME}--{dtt:.2f}-before-")
+                    print(f"{state_list}--{phase_duration}--{timetime}--{phase_NAME}--{dtt:.2f}-before__{ACTION}")
                 state_list,phase_duration,timetime=get_traffic_state(cars,controller)
                 if state_list[12]==0:
                     phase_NAME="north & south through"
@@ -1081,7 +1086,7 @@ def main():
                     phase_NAME="east & west left"
                 ACTION=choose_action(state_list)
                 controller.apply_action(ACTION)
-                print(f"{state_list}__{phase_duration}__{timetime}__{phase_NAME}__{dtt:.2f}_after_")
+                print(f"{state_list}__{phase_duration}__{timetime}__{phase_NAME}__{dtt:.2f}_after_{ACTION}")
                 print(f"***************************************************************************************************")
 
 
