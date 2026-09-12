@@ -1,3 +1,2 @@
-/ 
-traffic light 
-/
+
+# Smart Traffic light using AI

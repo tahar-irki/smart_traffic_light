@@ -25,12 +25,12 @@ BACKGROUND_COLOR= (169,169,169)
 LANE_LINE_COLOR= (192,192,192)
 STOP_LINE_COLOR= (255,0,127)
 
-CAR_LENGTH= 40
+CAR_LENGTH= 30
 CAR_WIDTH= 20
 CAR_SPEED= 120.0
 CAR_ACCELERATION= 180.0
 CAR_DECELERATION= 250.0
-MIN_CAR_GAP= 50
+MIN_CAR_GAP= 40
 CAR_COLORS = [
     (50, 120, 220),
     (220, 80, 70),
@@ -129,18 +129,22 @@ class traffic_controller:
     def current_phase(self):
         return self.Phases[self.current_phase_index]
     def apply_action(self, action):
-        if   action == 4:
-            # Decrease total phase duration by 5 seconds
-            self.current_phase.duration = max(5.0, self.current_phase.duration - 5.0)
-        elif action == 3:
-            # Decrease total phase duration by 2 seconds
-            self.current_phase.duration = max(3.0, self.current_phase.duration - 2.0)
+        if   action == 0:
+            # Increase total phase duration by 3s and phase timer by 6s
+            self.phase_timer=max(2.0, self.phase_timer - 6.0)
+            self.current_phase.duration +=3
         elif action == 1:
-            # Increase total phase duration by 2 seconds
-            self.current_phase.duration += 2.0
+            # Increase total phase duration by 1s and phase timer by 4s
+            self.phase_timer=max(2.0, self.phase_timer - 4.0)
+            self.current_phase.duration +=1
         elif action == 2:
-            # Increase total phase duration by 5 seconds
-            self.current_phase.duration += 5.0
+            # Decrease total phase duration by 1s and phase timer by 4s
+            self.phase_timer+=4.0 
+            self.current_phase.duration = max(4.0, self.current_phase.duration - 1.0)  
+        elif action==3 :
+            # Decrease total phase duration by 3s and phase timer by 6s
+            self.phase_timer+=6.0
+            self.current_phase.duration = max(4.0, self.current_phase.duration - 3.0)  
         else:
             pass
             
@@ -193,26 +197,23 @@ def search_phase_eva(evaluation_list,phase):
             i+=1
     return -1
 def choose_action(traffic_info):
-    evaluation_NS_THROUGH=[traffic_info[0]*2 + traffic_info[3]*2 + traffic_info[2] + traffic_info[5],0]
-    evaluation_NS_LEFT=[traffic_info[1]*2 + traffic_info[4]*2 + traffic_info[2] + traffic_info[5],1]
-    evaluation_EW_THROUGH=[traffic_info[6]*2 + traffic_info[9]*2 + traffic_info[8] + traffic_info[11],2]
-    evaluation_EW_LEFT=[traffic_info[7]*2 + traffic_info[10]*2 + traffic_info[8] + traffic_info[11],3]
-    equalizer=[10,67]
+    evaluation_NS_THROUGH=[traffic_info[0]*5 + traffic_info[3]*5 + traffic_info[2] + traffic_info[5],0]
+    evaluation_NS_LEFT=[traffic_info[1]*5 + traffic_info[4]*5 + traffic_info[2] + traffic_info[5],1]
+    evaluation_EW_THROUGH=[traffic_info[6]*5 + traffic_info[9]*5 + traffic_info[8] + traffic_info[11],2]
+    evaluation_EW_LEFT=[traffic_info[7]*5 + traffic_info[10]*5 + traffic_info[8] + traffic_info[11],3]
     evaluation_list=[evaluation_NS_THROUGH,evaluation_NS_LEFT,evaluation_EW_THROUGH,evaluation_EW_LEFT]
     evaluation_list.sort(key=lambda x: x[0], reverse=True)
-    evaluation_list.insert(2,equalizer)
     if traffic_info[12]==0 :
         action=search_phase_eva(evaluation_list,traffic_info[12])
-        return action
     elif traffic_info[12]==1 :
         action=search_phase_eva(evaluation_list,traffic_info[12])
-        return action
     elif traffic_info[12]==2 :
         action=search_phase_eva(evaluation_list,traffic_info[12])
-        return action
     elif traffic_info[12]==3 :
         action=search_phase_eva(evaluation_list,traffic_info[12])
-        return action    
+    if (action==1 or action==2) and evaluation_list[1]==evaluation_list[2]:
+        action=-1
+    return action
 class traffic_light:
     def __init__(self,x,y,approach,controller):
         self.x=x
@@ -645,7 +646,7 @@ def get_traffic_state(cars,controller):
     phase_duration=controller.current_phase.duration
     traffic_information=[north_through_right_waiting,north_left_waiting,total_north,south_through_right_waiting,south_left_waiting,total_south,west_through_right_waiting,west_left_waiting,total_west,east_through_right_waiting,east_left_waiting,total_east,currentphase,phasetime]
 
-    return traffic_information, phase_duration
+    return traffic_information, phase_duration, phasetime
 def draw_roads(screen):
 
     # Horizontal road
@@ -912,9 +913,12 @@ def draw_information(
     font,
     controller,
     statistics,
+    Thetimer,
 ):
 
     lines = [
+
+        f"TIMER: {Thetimer:.1f}",
 
         f"Phase: {controller.current_phase.name}",
 
@@ -972,133 +976,153 @@ def main():
         18,
     )
 
-    controller = traffic_controller()
+    run_time_X=0
+    avg_list=[]
+    completed_cars=[]
+    generated_cars=[]
+    run_time_boolean=True
+    while run_time_boolean:
 
-    statistics = Statistics()
+        dtt=0.0
 
-    traffic_lights = create_traffic_lights(
-        controller
-    )
+        cars = []
+        controller = traffic_controller()
+        
+        statistics = Statistics()
+        
+        traffic_lights = create_traffic_lights(
+            controller
+        )
+        running = True
+        print_time=0.0
+        spawn_timer = 0.0
 
-    cars = []
-
-    running = True
-    print_time=0.0
-    spawn_timer = 0.0
-    dtt=0.0
-    dt = clock.tick(FPS) / 1000.0
-
-
-    while running:
-
-
-        dtt+=dt
         dt = clock.tick(FPS) / 1000.0
 
 
-        dt = min(dt, 0.1)
-
-        for event in pygame.event.get():
-
-            if event.type == pygame.QUIT:
-
-                running = False
+        while running:
 
 
-        controller.update(dt)
+            dtt+=dt
+            dt = clock.tick(FPS) / 1000.0
 
 
+            dt = min(dt, 0.1)
 
-        spawn_timer += dt
+            for event in pygame.event.get():
 
-        if spawn_timer >= SPAWN_INTERVAL:
+                if event.type == pygame.QUIT:
 
-            spawn_timer = 0
-
-            new_car = spawn_car(cars)
-
-            if new_car is not None:
-
-                statistics.register_car()
+                    running = False
 
 
-        for car in cars:
-
-            car.update(
-                dt,
-                controller,
-                cars,
-            )
+            controller.update(dt)
 
 
 
-        remaining_cars = []
+            spawn_timer += dt
 
-        for car in cars:
+            if spawn_timer >= SPAWN_INTERVAL:
 
-            if car.finished:
+                spawn_timer = 0
 
-                statistics.register_completed_car(
-                    car
+                new_car = spawn_car(cars)
+
+                if new_car is not None:
+
+                    statistics.register_car()
+
+
+            for car in cars:
+
+                car.update(
+                    dt,
+                    controller,
+                    cars,
                 )
 
-            else:
-
-                remaining_cars.append(car)
-
-        cars = remaining_cars
 
 
+            remaining_cars = []
 
-        statistics.update(cars)
+            for car in cars:
 
-        print_time+=dt
+                if car.finished:
 
-        state_list,phase_duration=get_traffic_state(cars,controller)
-        if print_time>=5.0:
-            print_time=0.0
-            if state_list[12]==0:
-                phase_NAME="north & south through"
-            elif state_list[12]==1:
-                phase_NAME="north & south left"
-            elif state_list[12]==2:
-                phase_NAME="east & west through"
-            elif state_list[12]==3:
-                phase_NAME="east & west left"
-            print(state_list,phase_duration,phase_NAME,dtt)
-            ACTION=choose_action(state_list)
-            controller.apply_action(ACTION)
+                    statistics.register_completed_car(
+                        car
+                    )
+
+                else:
+
+                    remaining_cars.append(car)
+
+            cars = remaining_cars
 
 
-        screen.fill(
-            BACKGROUND_COLOR
-        )
 
-        draw_roads(screen)
+            statistics.update(cars)
+
+            print_time+=dt
+
+            
+            if print_time>=10.0:
+                print_time=0.0
+                if dtt>=15.0:
+                    print(f"{state_list}--{phase_duration}--{timetime}--{phase_NAME}--{dtt:.2f}-before-")
+                state_list,phase_duration,timetime=get_traffic_state(cars,controller)
+                if state_list[12]==0:
+                    phase_NAME="north & south through"
+                elif state_list[12]==1:
+                    phase_NAME="north & south left"
+                elif state_list[12]==2:
+                    phase_NAME="east & west through"
+                elif state_list[12]==3:
+                    phase_NAME="east & west left"
+                ACTION=choose_action(state_list)
+                controller.apply_action(ACTION)
+                print(f"{state_list}__{phase_duration}__{timetime}__{phase_NAME}__{dtt:.2f}_after_")
+                print(f"***************************************************************************************************")
 
 
-        for light in traffic_lights:
 
-            light.draw(screen)
+            screen.fill(
+                BACKGROUND_COLOR
+            )
 
-
-        for car in cars:
-
-            car.draw(screen)
+            draw_roads(screen)
 
 
-        draw_information(
-            screen,
-            font,
-            controller,
-            statistics,
-        )
+            for light in traffic_lights:
+
+                light.draw(screen)
 
 
-        pygame.display.flip()
-        if dtt>=300.0:
-            running=False
-            print(statistics.average_waiting_time())
+            for car in cars:
+
+                car.draw(screen)
+
+
+            draw_information(
+                screen,
+                font,
+                controller,
+                statistics,
+                dtt,
+            )
+
+            
+            pygame.display.flip()
+            if dtt>=300.0:
+                avg_list.append(statistics.average_waiting_time())
+                completed_cars.append(statistics.completed_cars)
+                generated_cars.append(statistics.total_cars)
+                running=False
+                run_time_X+=1
+                if run_time_X==6:
+                    run_time_boolean=False
+                    print(f"avg time=={avg_list} \ncompleted cars=={completed_cars}\ngenerated cars=={generated_cars}")
+            
 
     pygame.quit()
 
