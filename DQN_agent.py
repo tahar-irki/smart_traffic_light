@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
+import random
+import os
 from Dqn import DQN
 
 
@@ -46,6 +48,8 @@ class DQNAgent:
 
         return action
     def train_step(self, batch):
+
+        self.model.train()
 
         states = []
         actions = []
@@ -98,3 +102,61 @@ class DQNAgent:
         self.optimizer.step()
 
         return loss.item()
+    def select_action(self,state,epsilon_greedy):
+        random_number= random.random()
+            #exploration
+        if random_number<=epsilon_greedy:
+            selected_action=random.randint(0,4)
+        else:
+            #exploitation
+            self.model.eval()
+            process_state=torch.tensor([state],dtype=torch.float32,device=self.device)
+            with torch.no_grad():
+                q_values = self.model(process_state)
+            selected_action = torch.argmax(q_values, dim=1).item()
+            
+        return selected_action
+    def save_checkpoint(self, path, epsilon, episode):
+        checkpoint = {
+            "model_state_dict": self.model.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "epsilon": epsilon,
+            "episode": episode
+        }
+
+        if not os.path.exists(path):
+            torch.save(checkpoint, path)
+            print(f"Created new checkpoint at '{path}'.")
+        else:
+            temp_path = f"{path}.tmp"
+            torch.save(checkpoint, temp_path)
+            os.replace(temp_path, path)
+            print(f"Updated checkpoint at '{path}'.")
+    def load_checkpoint(self, path):
+        if not os.path.exists(path):
+            print("No checkpoint found. Starting training from scratch.")
+            return 1.0, 0
+
+        checkpoint = torch.load(
+            path,
+            map_location=self.device
+        )
+
+        self.model.load_state_dict(
+            checkpoint["model_state_dict"]
+        )
+
+        self.optimizer.load_state_dict(
+            checkpoint["optimizer_state_dict"]
+        )
+
+        epsilon = checkpoint["epsilon"]
+        episode = checkpoint["episode"]
+
+        print(
+            f"Checkpoint loaded. "
+            f"Continuing from episode {episode}, "
+            f"epsilon = {epsilon}"
+        )
+
+        return epsilon, episode

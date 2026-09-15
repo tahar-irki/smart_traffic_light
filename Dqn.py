@@ -4,7 +4,7 @@ import torch.nn as nn
 
 class DQN(nn.Module):
 
-    def __init__(self, state_size=14, action_size=4):
+    def __init__(self, state_size=14, action_size=5):
         super().__init__()
 
         self.network = nn.Sequential(
