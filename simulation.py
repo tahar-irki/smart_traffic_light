@@ -1,6 +1,8 @@
 import pygame
 import math
 import random
+from collections import deque
+from DQN_agent import DQNAgent
 
 HEIGHT= 800
 WIDTH= 1200
@@ -41,6 +43,7 @@ CAR_COLORS = [
 ]
 
 SPAWN_INTERVAL= 1.7
+SELLECTION_TIMER=5.0
 
 NS_LEFT_TIME = 24.0
 NS_THROUGH_TIME = 24.0
@@ -48,6 +51,14 @@ EW_LEFT_TIME = 24.0
 EW_THROUGH_TIME = 24.0
 YELLOW_TIME = 3.0
 STOP_DISTANCE = 35
+
+SIZE_PATCH=64
+EPISODE_LENGTH=180.0
+
+EPSILON_START=1.0
+EPSILON_END=0.05
+EPSILON_GREEDY=EPSILON_START
+EPSILON_DECAY=0.95
 
 NORTH= "north"
 SOUTH= "south"
@@ -131,20 +142,20 @@ class traffic_controller:
     def apply_action(self, action):
         if   action == 0:
             # Increase total phase duration by 3s and phase timer by 6s
-            self.phase_timer=max(2.0, self.phase_timer - 6.0)
-            self.current_phase.duration +=3
+            self.phase_timer=max(2.0, self.phase_timer - 3.0)
+            self.current_phase.duration +=1.0
         elif action == 1:
             # Increase total phase duration by 1s and phase timer by 4s
-            self.phase_timer=max(2.0, self.phase_timer - 4.0)
-            self.current_phase.duration +=1
+            self.phase_timer=max(2.0, self.phase_timer - 1.0)
+            self.current_phase.duration +=0.5
         elif action == 2:
             # Decrease total phase duration by 1s and phase timer by 4s
-            self.phase_timer+=4.0 
-            self.current_phase.duration = max(4.0, self.current_phase.duration - 1.0)  
+            self.phase_timer+=1.0 
+            self.current_phase.duration = max(4.0, self.current_phase.duration - 0.5)  
         elif action==3 :
             # Decrease total phase duration by 3s and phase timer by 6s
-            self.phase_timer+=6.0
-            self.current_phase.duration = max(4.0, self.current_phase.duration - 3.0)  
+            self.phase_timer+=3.0
+            self.current_phase.duration = max(4.0, self.current_phase.duration - 1.0)  
         else:
             pass
             
@@ -212,7 +223,7 @@ def choose_action(traffic_info):
     elif traffic_info[12]==3 :
         action=search_phase_eva(evaluation_list,traffic_info[12])
     if (action==1 or action==2) and evaluation_list[1]==evaluation_list[2]:
-        action=-1
+        action=4
     return action
 class traffic_light:
     def __init__(self,x,y,approach,controller):
@@ -613,40 +624,77 @@ class Statistics:
         if self.completed_cars == 0:
             return 0
         return self.total_waiting_time / self.completed_cars
+class ReplayMemory:
+
+    def __init__(self, capacity):
+        self.memory = deque(maxlen=capacity)
+
+    def push(self, state, action, reward, next_state, done):
+        self.memory.append(
+            (state, action, reward, next_state, done)
+        )
+
+    def sample(self, batch_size):
+        return random.sample(self.memory, batch_size)
+
+    def __len__(self):
+        return len(self.memory)
 def get_traffic_state(cars,controller):
 
     total_north,north_through_right_waiting,north_left_waiting,total_south,south_through_right_waiting,south_left_waiting,total_west,west_through_right_waiting,west_left_waiting,total_east,east_through_right_waiting,east_left_waiting=0,0,0,0,0,0,0,0,0,0,0,0
     for car in cars:
-        if car.approach == NORTH:
-            if car.movement== LEFT and car.state==WAITING:
+        if car.approach == NORTH and car.state==WAITING:
+            if car.movement== LEFT :
                 north_left_waiting+=1
-            elif car.state== WAITING:
+            else:
                 north_through_right_waiting+=1
             total_north+=1
-        elif car.approach==SOUTH:
-            if car.movement== LEFT and car.state==WAITING:
+        elif car.approach==SOUTH and car.state==WAITING:
+            if car.movement== LEFT :
                 south_left_waiting += 1
-            elif car.state==WAITING:
+            else:
                 south_through_right_waiting += 1
             total_south += 1
-        elif car.approach==WEST:
-            if car.movement== LEFT and car.state==WAITING:
+        elif car.approach==WEST and car.state==WAITING:
+            if car.movement== LEFT:
                 west_left_waiting += 1
-            elif car.state==WAITING:
+            else:
                 west_through_right_waiting += 1
             total_west += 1
-        elif car.approach==EAST:
-            if car.movement== LEFT and car.state==WAITING:
+        elif car.approach==EAST and car.state==WAITING:
+            if car.movement== LEFT:
                 east_left_waiting += 1
-            elif car.state==WAITING:
+            else:
                 east_through_right_waiting += 1
             total_east += 1     
     currentphase=controller.current_phase_index
-    phasetime=int(controller.phase_timer)
+    phasetime=controller.phase_timer
     phase_duration=controller.current_phase.duration
-    traffic_information=[north_through_right_waiting,north_left_waiting,total_north,south_through_right_waiting,south_left_waiting,total_south,west_through_right_waiting,west_left_waiting,total_west,east_through_right_waiting,east_left_waiting,total_east,currentphase,phasetime]
+    traffic_information=[north_through_right_waiting,north_left_waiting,total_north,south_through_right_waiting,south_left_waiting,total_south,west_through_right_waiting,west_left_waiting,total_west,east_through_right_waiting,east_left_waiting,total_east,currentphase,round(phasetime,3)]
 
     return traffic_information, phase_duration, phasetime
+def normalize_state(state, phase_duration):
+    normalized = state.copy()
+    total_cars=max(1,(normalized[2] + normalized[5] + normalized[8] + normalized[11]))
+    for i in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]:
+        normalized[i] = round(normalized[i] / total_cars,3)
+    normalized[12] = round(normalized[12] / 3,3)
+    normalized[13] = round(normalized[13] / phase_duration,3)
+
+    return normalized
+def calculate_reward(cars):
+    waiting_cars=0
+    total_waiting_time=0.0
+    for car in cars:
+        if car.state == WAITING:
+            waiting_cars+=1
+        if car.waiting_time >= 5.0:
+            total_waiting_time+=5.0
+        else:        
+            total_waiting_time+=car.waiting_time
+
+    reward=-(waiting_cars + total_waiting_time*0.1)
+    return reward
 def draw_roads(screen):
 
     # Horizontal road
@@ -914,9 +962,12 @@ def draw_information(
     controller,
     statistics,
     Thetimer,
+    episode_counter
 ):
 
     lines = [
+
+        f"episode number: {episode_counter}",
 
         f"TIMER: {Thetimer:.1f}",
 
@@ -976,14 +1027,27 @@ def main():
         18,
     )
 
-    run_time_X=0
-    avg_list=[]
-    completed_cars=[]
-    generated_cars=[]
-    run_time_boolean=True
-    while run_time_boolean:
+    new_episode=True
+    continue_variable= 1
+    DQN_agent=DQNAgent()
+    memory = ReplayMemory(10000)
 
+    EPSILON_GREEDY, episode_counter = DQN_agent.load_checkpoint(
+            "traffic_dqn_checkpoint.pth"
+        )
+
+    while new_episode:
+
+        episode_counter+=1
         dtt=0.0
+
+        state_list=[]
+        normalized_state_list=state_list
+        phase_duration=0.0
+        phase_NAME=""
+        ACTION=-1
+        remaining_time=0.0
+        done=False
 
         cars = []
         controller = traffic_controller()
@@ -996,7 +1060,7 @@ def main():
         running = True
         print_time=0.0
         spawn_timer = 0.0
-
+        episode_total_reward = 0.0        
         dt = clock.tick(FPS) / 1000.0
 
 
@@ -1065,12 +1129,62 @@ def main():
 
             print_time+=dt
 
+            if dtt>=EPISODE_LENGTH:
+                done=True
+                running=False
+                print(f"episode {episode_counter} : reward {episode_total_reward:.4f}, avr waiting {statistics.average_waiting_time():.2f}, max Queue {statistics.maximum_queue}, completed cars {statistics.completed_cars}, epsilon {EPSILON_GREEDY}.")
+                
+                if EPSILON_GREEDY == 0.05:
+                    while True:
+                        continue_variable=int(input("you want to continue : 1 = YES or 2 = NO or 3 = epsilon to 0"))
+                        if continue_variable== 1 or continue_variable== 2 or continue_variable== 3:
+                            break
+                        else:
+                            pass
+                    if continue_variable == 1:
+                        pass
+                    elif continue_variable == 2:
+                        new_episode=False
+                    else :
+                        EPSILON_GREEDY=0
+                if continue_variable!= 3:
+                    EPSILON_GREEDY=max(EPSILON_END,EPSILON_GREEDY * EPSILON_DECAY)
+                if episode_counter % 10 == 0:
+                    DQN_agent.save_checkpoint("traffic_dqn_checkpoint.pth" ,EPSILON_GREEDY,episode_counter)
+
             
-            if print_time>=10.0:
+            if print_time>=SELLECTION_TIMER:
                 print_time=0.0
-                if dtt>=15.0:
-                    print(f"{state_list}--{phase_duration}--{timetime}--{phase_NAME}--{dtt:.2f}-before-")
-                state_list,phase_duration,timetime=get_traffic_state(cars,controller)
+                
+                #print(f"{state_list}--{phase_duration}--{remaining_time}--{phase_NAME}--{dtt:.2f}-before__{ACTION}")
+                if ACTION!= -1:
+                    previous_state=normalize_state(state_list, phase_duration)
+                previous_action=ACTION
+                state_list,phase_duration ,remaining_time=get_traffic_state(cars,controller)
+                if ACTION != -1:
+                    reward= calculate_reward(cars)
+                    episode_total_reward+= reward
+                    #print("------------------------------------------")
+                    #print("Previous state:", previous_state)
+                    #print("Previous action:", previous_action)
+                    #print("Reward:", reward)
+                    #print("Current state:", state_list)
+                    #print("------------------------------------------")
+                    normalized_state_list=normalize_state(state_list, phase_duration)
+                    #print(f"normalized state list{normalized_state_list}")
+                    memory.push(
+                        previous_state,
+                        previous_action,
+                        reward,
+                        normalized_state_list,
+                        done
+                    )
+                    
+                    if len(memory)>=SIZE_PATCH:
+                        batch = memory.sample(SIZE_PATCH)
+                        LOSS=DQN_agent.train_step(batch)
+                        #print(f"the loss is {LOSS}")
+                    #print("Memory size:", len(memory))
                 if state_list[12]==0:
                     phase_NAME="north & south through"
                 elif state_list[12]==1:
@@ -1079,10 +1193,10 @@ def main():
                     phase_NAME="east & west through"
                 elif state_list[12]==3:
                     phase_NAME="east & west left"
-                ACTION=choose_action(state_list)
+                ACTION=DQN_agent.select_action(normalize_state(state_list, phase_duration),EPSILON_GREEDY)
                 controller.apply_action(ACTION)
-                print(f"{state_list}__{phase_duration}__{timetime}__{phase_NAME}__{dtt:.2f}_after_")
-                print(f"***************************************************************************************************")
+                #print(f"{state_list}__{phase_duration}__{remaining_time}__{phase_NAME}__{dtt:.2f}_after_{ACTION}")
+                #print(f"***************************************************************************************************")
 
 
 
@@ -1109,19 +1223,13 @@ def main():
                 controller,
                 statistics,
                 dtt,
+                episode_counter
             )
 
             
             pygame.display.flip()
-            if dtt>=300.0:
-                avg_list.append(statistics.average_waiting_time())
-                completed_cars.append(statistics.completed_cars)
-                generated_cars.append(statistics.total_cars)
-                running=False
-                run_time_X+=1
-                if run_time_X==6:
-                    run_time_boolean=False
-                    print(f"avg time=={avg_list} \ncompleted cars=={completed_cars}\ngenerated cars=={generated_cars}")
+        
+
             
 
     pygame.quit()
